@@ -1,0 +1,958 @@
+<!-- SUMMIT QUEST — gamified trekking app with live GPS + real world trails -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Outfit:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg:#0c130e; --panel:#121c15; --panel2:#16241a;
+    --ink:#e9f0e6; --ink-dim:#9bae9c; --line:#27392c;
+    --moss:#6fae7e; --moss-deep:#3f7553; --pine:#1b3122;
+    --amber:#e6a93b; --ember:#df7438; --sky:#5ec7d6;
+    --easy:#62b56a; --moderate:#e6a93b; --hard:#df7438; --extreme:#e0556a;
+    --shadow:0 18px 50px -12px rgba(0,0,0,.65);
+    --topo:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240"><g fill="none" stroke="%23ffffff" stroke-opacity="0.04" stroke-width="1"><path d="M-20 120 Q60 60 120 110 T260 100"/><path d="M-20 150 Q70 95 130 140 T270 130"/><path d="M-20 90 Q50 40 110 80 T250 70"/><path d="M-20 185 Q80 140 140 178 T280 168"/><path d="M-20 55 Q55 15 100 48 T240 40"/></g></svg>');
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+    font-family:'Outfit',system-ui,sans-serif}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+  /* ---------- MAP ---------- */
+  #map{position:absolute;inset:0;z-index:1;background:#0c130e}
+  .leaflet-container{background:#0c130e;font-family:'Outfit',sans-serif}
+  .leaflet-control-attribution{background:rgba(12,19,14,.7)!important;color:#7d8e7e!important;
+    font-size:9px!important;backdrop-filter:blur(4px)}
+  .leaflet-control-attribution a{color:#9bae9c!important}
+  .leaflet-bar{border:none!important;box-shadow:none!important}
+
+  /* user position marker */
+  .me-dot{width:18px;height:18px;border-radius:50%;background:var(--sky);
+    border:3px solid #fff;box-shadow:0 0 0 6px rgba(94,199,214,.25);position:relative}
+  .me-dot::after{content:"";position:absolute;inset:-3px;border-radius:50%;
+    border:2px solid var(--sky);animation:pulse 2.2s ease-out infinite}
+  @keyframes pulse{0%{transform:scale(1);opacity:.8}100%{transform:scale(3.4);opacity:0}}
+
+  /* trail head marker */
+  .th{width:30px;height:30px;display:grid;place-items:center;transform:translateY(-4px)}
+  .th .pin{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+    border:2px solid rgba(255,255,255,.9);box-shadow:0 6px 14px rgba(0,0,0,.5);
+    display:grid;place-items:center}
+  .th .pin span{transform:rotate(45deg);font-size:13px;line-height:1}
+  .th.done .pin{background:var(--moss-deep)!important}
+
+  /* ---------- TOP BAR ---------- */
+  header{position:relative;z-index:600;display:flex;align-items:center;gap:14px;
+    padding:11px 16px;background:linear-gradient(180deg,rgba(10,16,11,.96),rgba(10,16,11,.78) 70%,transparent);
+    backdrop-filter:blur(6px);pointer-events:none}
+  header > *{pointer-events:auto}
+  .brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+  .logo{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;
+    background:radial-gradient(120% 120% at 30% 20%,var(--amber),var(--ember) 75%);
+    box-shadow:0 6px 18px -4px rgba(223,116,56,.6),inset 0 0 0 1px rgba(255,255,255,.18);
+    font-size:20px}
+  .brand h1{font-family:'Bricolage Grotesque';font-weight:800;font-size:18px;margin:0;
+    letter-spacing:-.02em;line-height:1}
+  .brand h1 small{display:block;font-family:'Space Mono';font-weight:400;font-size:9.5px;
+    letter-spacing:.32em;color:var(--amber);margin-top:3px}
+
+  .lvlbox{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:12px}
+  .lvlbadge{flex:0 0 auto;width:42px;height:42px;border-radius:12px;position:relative;
+    display:grid;place-items:center;background:var(--panel2);border:1px solid var(--line)}
+  .lvlbadge b{font-family:'Bricolage Grotesque';font-size:19px;font-weight:800;color:var(--amber)}
+  .lvlbadge i{position:absolute;bottom:-7px;font-style:normal;font-family:'Space Mono';
+    font-size:7px;letter-spacing:.18em;color:var(--ink-dim);background:var(--bg);
+    padding:1px 5px;border-radius:6px;border:1px solid var(--line);white-space:nowrap}
+  .xpwrap{flex:1 1 auto;min-width:0}
+  .xprow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+  .title{font-family:'Bricolage Grotesque';font-weight:600;font-size:13.5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .xptxt{font-family:'Space Mono';font-size:10px;color:var(--ink-dim);flex:0 0 auto;margin-left:8px}
+  .xpbar{height:8px;border-radius:99px;background:#0a120c;border:1px solid var(--line);overflow:hidden;position:relative}
+  .xpfill{height:100%;border-radius:99px;width:0;
+    background:linear-gradient(90deg,var(--moss-deep),var(--moss),var(--amber));
+    transition:width .9s cubic-bezier(.2,.8,.2,1);box-shadow:0 0 12px rgba(111,174,126,.5)}
+
+  .stats{display:flex;gap:8px;flex:0 0 auto}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:6px 11px;text-align:center;min-width:54px;cursor:default}
+  .stat .v{font-family:'Space Mono';font-weight:700;font-size:14px;line-height:1.1;display:flex;
+    align-items:center;justify-content:center;gap:4px}
+  .stat .l{font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin-top:3px}
+  .stat.flame .v{color:var(--ember)}
+  .stat.km .v{color:var(--sky)}
+  .btn-badges{cursor:pointer;transition:transform .15s,border-color .2s}
+  .btn-badges:hover{transform:translateY(-2px);border-color:var(--amber)}
+  .btn-badges .v{color:var(--amber)}
+
+  /* ---------- MAP FLOATING CONTROLS ---------- */
+  .mapctrl{position:absolute;z-index:550;display:flex;flex-direction:column;gap:8px}
+  .mapctrl.right{right:14px;top:50%;transform:translateY(-50%)}
+  .cbtn{width:46px;height:46px;border-radius:13px;border:1px solid var(--line);
+    background:rgba(18,28,21,.92);backdrop-filter:blur(8px);color:var(--ink);
+    display:grid;place-items:center;cursor:pointer;font-size:20px;box-shadow:var(--shadow);
+    transition:transform .15s,background .2s,border-color .2s}
+  .cbtn:hover{transform:scale(1.07);border-color:var(--moss)}
+  .cbtn:active{transform:scale(.94)}
+  .cbtn.on{background:var(--moss-deep);border-color:var(--moss)}
+  .layerpop{position:absolute;right:56px;top:0;background:rgba(18,28,21,.96);backdrop-filter:blur(8px);
+    border:1px solid var(--line);border-radius:13px;padding:6px;box-shadow:var(--shadow);
+    display:none;flex-direction:column;gap:3px;width:124px}
+  .layerpop.open{display:flex}
+  .layerpop button{background:none;border:none;color:var(--ink-dim);text-align:left;
+    padding:8px 11px;border-radius:9px;cursor:pointer;font-family:'Outfit';font-size:13px;font-weight:500}
+  .layerpop button:hover{background:var(--panel2);color:var(--ink)}
+  .layerpop button.sel{color:var(--amber);background:var(--panel2)}
+
+  /* ---------- TRAIL PANEL ---------- */
+  #panel{position:absolute;z-index:560;left:14px;top:74px;bottom:14px;width:360px;max-width:calc(100vw - 28px);
+    background:rgba(15,23,17,.93);backdrop-filter:blur(14px);border:1px solid var(--line);
+    border-radius:20px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;
+    background-image:var(--topo);background-size:240px}
+  .phead{padding:16px 18px 12px;border-bottom:1px solid var(--line)}
+  .phead h2{font-family:'Bricolage Grotesque';font-weight:800;font-size:17px;margin:0 0 3px;letter-spacing:-.02em}
+  .phead p{margin:0;font-size:11.5px;color:var(--ink-dim);font-family:'Space Mono'}
+  .filters{display:flex;gap:6px;padding:11px 14px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  .chip{font-family:'Space Mono';font-size:10px;letter-spacing:.06em;padding:6px 11px;border-radius:99px;
+    border:1px solid var(--line);background:transparent;color:var(--ink-dim);cursor:pointer;
+    transition:all .18s;text-transform:uppercase}
+  .chip:hover{color:var(--ink)}
+  .chip.sel{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+  .plist{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:9px}
+  .plist::-webkit-scrollbar{width:8px}
+  .plist::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+
+  .tcard{position:relative;border:1px solid var(--line);border-radius:15px;padding:13px 14px;
+    background:linear-gradient(135deg,rgba(22,36,26,.85),rgba(15,23,17,.7));cursor:pointer;
+    transition:transform .15s,border-color .2s,box-shadow .2s;overflow:hidden}
+  .tcard:hover{transform:translateY(-2px);border-color:var(--moss);box-shadow:0 10px 24px -10px rgba(0,0,0,.6)}
+  .tcard.active{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 10px 26px -10px rgba(230,169,59,.4)}
+  .tcard .flag{position:absolute;top:12px;right:13px;font-size:19px}
+  .tcard.done::before{content:"✓ SUMMITED";position:absolute;top:0;right:0;
+    font-family:'Space Mono';font-size:8px;letter-spacing:.1em;background:var(--moss-deep);
+    color:#fff;padding:3px 9px;border-radius:0 14px 0 11px}
+  .tcard h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;margin:0 0 3px;
+    padding-right:26px;letter-spacing:-.01em}
+  .tcard .loc{font-size:11px;color:var(--ink-dim);margin-bottom:9px;font-family:'Space Mono'}
+  .tmeta{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .diff{font-family:'Space Mono';font-size:9px;font-weight:700;letter-spacing:.08em;padding:3px 8px;
+    border-radius:6px;text-transform:uppercase}
+  .tmeta .m{font-family:'Space Mono';font-size:10px;color:var(--ink-dim);display:flex;align-items:center;gap:3px}
+  .xptag{margin-left:auto;font-family:'Space Mono';font-size:11px;font-weight:700;color:var(--amber)}
+
+  /* ---------- DETAIL DRAWER ---------- */
+  #detail{position:absolute;z-index:580;left:14px;bottom:14px;width:360px;max-width:calc(100vw - 28px);
+    background:rgba(13,20,15,.97);backdrop-filter:blur(16px);border:1px solid var(--line);
+    border-radius:20px;box-shadow:var(--shadow);transform:translateY(140%);transition:transform .4s cubic-bezier(.2,.9,.2,1);
+    overflow:hidden;background-image:var(--topo);background-size:240px}
+  #detail.open{transform:translateY(0)}
+  .dhead{padding:16px 18px;position:relative}
+  .dclose{position:absolute;top:13px;right:13px;width:30px;height:30px;border-radius:9px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--ink-dim);cursor:pointer;font-size:16px;display:grid;place-items:center}
+  .dclose:hover{color:var(--ink)}
+  .dhead .dflag{font-size:26px;margin-bottom:6px}
+  .dhead h2{font-family:'Bricolage Grotesque';font-weight:800;font-size:20px;margin:0 0 2px;
+    padding-right:34px;letter-spacing:-.02em;line-height:1.1}
+  .dhead .dloc{font-family:'Space Mono';font-size:11px;color:var(--moss);letter-spacing:.04em}
+  .dblurb{font-size:13px;line-height:1.5;color:var(--ink-dim);padding:0 18px 12px}
+  .dgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .dgrid .c{background:var(--panel);padding:11px 6px;text-align:center}
+  .dgrid .c .v{font-family:'Space Mono';font-weight:700;font-size:14px}
+  .dgrid .c .l{font-size:8px;letter-spacing:.1em;color:var(--ink-dim);text-transform:uppercase;margin-top:3px}
+  .dact{padding:14px 18px;display:flex;gap:10px}
+  .pbtn{flex:1;border:none;border-radius:13px;padding:13px;font-family:'Bricolage Grotesque';font-weight:600;
+    font-size:14px;cursor:pointer;transition:transform .14s,filter .2s;display:flex;align-items:center;
+    justify-content:center;gap:7px}
+  .pbtn:active{transform:scale(.97)}
+  .pbtn.primary{background:linear-gradient(135deg,var(--amber),var(--ember));color:#1a0f06;
+    box-shadow:0 8px 22px -8px rgba(223,116,56,.7)}
+  .pbtn.primary:hover{filter:brightness(1.08)}
+  .pbtn.ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+  .pbtn.ghost:hover{border-color:var(--moss)}
+  .pbtn.done{background:var(--moss-deep);color:#fff;cursor:default}
+  .pbtn:disabled{opacity:.5;cursor:not-allowed}
+
+  /* ---------- TOASTS ---------- */
+  #toasts{position:absolute;z-index:900;top:78px;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column;gap:9px;align-items:center;pointer-events:none;width:max-content;max-width:92vw}
+  .toast{background:rgba(13,20,15,.97);backdrop-filter:blur(10px);border:1px solid var(--line);
+    border-left:4px solid var(--amber);border-radius:13px;padding:12px 18px;box-shadow:var(--shadow);
+    display:flex;align-items:center;gap:12px;animation:tin .4s cubic-bezier(.2,.9,.2,1);min-width:240px}
+  .toast.lvl{border-left-color:var(--moss);background:linear-gradient(135deg,rgba(20,40,26,.98),rgba(13,20,15,.97))}
+  .toast.badge{border-left-color:var(--sky)}
+  @keyframes tin{from{transform:translateY(-16px) scale(.92);opacity:0}to{transform:none;opacity:1}}
+  .toast .ico{font-size:26px}
+  .toast .tt{font-family:'Bricolage Grotesque';font-weight:800;font-size:14px}
+  .toast .ts{font-size:11.5px;color:var(--ink-dim);margin-top:1px;font-family:'Space Mono'}
+
+  /* ---------- BADGES MODAL ---------- */
+  #modal{position:absolute;inset:0;z-index:950;background:rgba(6,10,7,.78);backdrop-filter:blur(6px);
+    display:none;align-items:center;justify-content:center;padding:18px}
+  #modal.open{display:flex;animation:fade .25s}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .mcard{width:min(720px,100%);max-height:86vh;overflow:hidden;background:var(--panel);
+    border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);display:flex;flex-direction:column;
+    background-image:var(--topo);background-size:300px}
+  .mtop{padding:20px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+  .mtop h2{font-family:'Bricolage Grotesque';font-weight:800;font-size:21px;margin:0;letter-spacing:-.02em}
+  .mtop p{margin:3px 0 0;font-family:'Space Mono';font-size:11px;color:var(--ink-dim)}
+  .bgrid{padding:18px 22px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+  .bcard{border:1px solid var(--line);border-radius:15px;padding:15px 13px;text-align:center;
+    background:var(--panel2);position:relative;transition:transform .15s}
+  .bcard.locked{opacity:.4;filter:grayscale(1)}
+  .bcard.unlocked{border-color:var(--amber)}
+  .bcard.unlocked:hover{transform:translateY(-3px)}
+  .bcard .be{font-size:34px;line-height:1}
+  .bcard .bn{font-family:'Bricolage Grotesque';font-weight:600;font-size:13px;margin-top:8px}
+  .bcard .bd{font-size:10px;color:var(--ink-dim);margin-top:4px;line-height:1.35;font-family:'Space Mono'}
+  .bcard.unlocked::after{content:"✓";position:absolute;top:8px;right:10px;color:var(--moss);font-weight:800}
+
+  /* GPS status banner */
+  #gps{position:absolute;z-index:540;bottom:14px;left:50%;transform:translateX(-50%);
+    background:rgba(13,20,15,.95);border:1px solid var(--line);border-radius:12px;padding:9px 15px;
+    font-family:'Space Mono';font-size:11px;color:var(--ink-dim);display:none;align-items:center;gap:9px;
+    box-shadow:var(--shadow);max-width:92vw;text-align:center}
+  #gps.show{display:flex}
+  #gps b{color:var(--amber)}
+
+  /* ---------- PANEL TABS + LOCAL SEARCH ---------- */
+  .ptabs{display:flex;padding:8px 8px 0;gap:6px;border-bottom:1px solid var(--line)}
+  .ptab{flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--ink-dim);
+    font-family:'Bricolage Grotesque';font-weight:600;font-size:13px;padding:11px 6px 12px;cursor:pointer;
+    transition:color .2s,border-color .2s;letter-spacing:-.01em}
+  .ptab:hover{color:var(--ink)}
+  .ptab.sel{color:var(--amber);border-bottom-color:var(--amber)}
+  .searchbar{display:flex;gap:8px;padding:13px 14px 9px}
+  .searchbar input{flex:1;min-width:0;background:#0a120c;border:1px solid var(--line);border-radius:11px;
+    padding:11px 13px;color:var(--ink);font-family:'Outfit';font-size:13.5px;outline:none;transition:border-color .2s}
+  .searchbar input:focus{border-color:var(--moss)}
+  .searchbar input::placeholder{color:#6c7d6d}
+  .searchbar button{flex:0 0 auto;border:none;border-radius:11px;padding:0 16px;cursor:pointer;
+    font-family:'Bricolage Grotesque';font-weight:600;font-size:13px;color:#1a0f06;
+    background:linear-gradient(135deg,var(--amber),var(--ember));box-shadow:0 6px 16px -8px rgba(223,116,56,.7);
+    transition:filter .2s,transform .14s}
+  .searchbar button:hover{filter:brightness(1.08)}
+  .searchbar button:active{transform:scale(.96)}
+  .searchrow{display:flex;align-items:center;gap:8px;padding:0 14px 11px;flex-wrap:wrap}
+  .ghostmini{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:99px;
+    padding:7px 13px;font-family:'Space Mono';font-size:11px;cursor:pointer;transition:border-color .2s}
+  .ghostmini:hover{border-color:var(--moss)}
+  .radii{display:flex;gap:5px;margin-left:auto}
+  .rchip{font-family:'Space Mono';font-size:10px;padding:6px 10px;border-radius:99px;border:1px solid var(--line);
+    background:transparent;color:var(--ink-dim);cursor:pointer;transition:all .18s}
+  .rchip.sel{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+  .lstatus{padding:0 16px 13px;font-family:'Space Mono';font-size:11.5px;color:var(--ink-dim);
+    line-height:1.45;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--line)}
+  .spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--amber);
+    animation:sp .8s linear infinite;flex:0 0 auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .emptylocal{text-align:center;color:var(--ink-dim);padding:34px 18px;font-family:'Space Mono';font-size:12px;line-height:1.6}
+  .emptylocal .big{font-size:38px;display:block;margin-bottom:10px;opacity:.6}
+  .tcard.local h3{padding-right:26px}
+  .osmtag{font-family:'Space Mono';font-size:8.5px;letter-spacing:.1em;color:var(--moss);
+    border:1px solid var(--line);border-radius:5px;padding:2px 6px}
+  .dact{flex-wrap:wrap}
+  .pbtn.wide{flex:0 0 100%}
+
+  /* ---------- RESPONSIVE ---------- */
+  @media(max-width:780px){
+    header{flex-wrap:wrap;gap:9px;padding:9px 11px}
+    .brand h1{font-size:16px}
+    .lvlbox{order:3;width:100%}
+    .stats{order:2;margin-left:auto}
+    #panel{top:auto;bottom:0;left:0;right:0;width:100%;max-width:100%;height:46vh;
+      border-radius:20px 20px 0 0;border-bottom:none}
+    #detail{left:0;right:0;bottom:0;width:100%;max-width:100%;border-radius:20px 20px 0 0;border-bottom:none}
+    .mapctrl.right{top:auto;bottom:48vh;transform:none}
+    #gps{bottom:auto;top:130px}
+    .stat{min-width:46px;padding:5px 8px}
+  }
+  .panel-collapsed #panel{transform:translateY(calc(100% - 52px))}
+  @media(min-width:781px){.panel-collapsed #panel{transform:none}}
+  .ptoggle{display:none}
+  @media(max-width:780px){
+    .ptoggle{display:flex;position:absolute;top:9px;left:50%;transform:translateX(-50%);
+      width:46px;height:5px;border-radius:99px;background:var(--line);border:none;cursor:pointer}
+    .phead{padding-top:22px}
+  }
+</style>
+
+<div id="app">
+  <header>
+    <div class="brand">
+      <div class="logo">⛰️</div>
+      <h1>SUMMIT QUEST<small>TREK · TRACK · ASCEND</small></h1>
+    </div>
+    <div class="lvlbox">
+      <div class="lvlbadge"><b id="lvlNum">1</b><i id="lvlTitleSm">ROOKIE</i></div>
+      <div class="xpwrap">
+        <div class="xprow"><span class="title" id="lvlTitle">Trailhead Rookie</span>
+          <span class="xptxt" id="xpTxt">0 / 300 XP</span></div>
+        <div class="xpbar"><div class="xpfill" id="xpFill"></div></div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat flame"><div class="v"><span id="streak">0</span>🔥</div><div class="l">Streak</div></div>
+      <div class="stat km"><div class="v" id="km">0.0</div><div class="l">KM Walked</div></div>
+      <div class="stat btn-badges" id="openBadges"><div class="v" id="badgeCount">0</div><div class="l">Badges</div></div>
+    </div>
+  </header>
+
+  <div id="map"></div>
+
+  <!-- floating map controls -->
+  <div class="mapctrl right">
+    <button class="cbtn" id="locateBtn" title="Find me">📍</button>
+    <button class="cbtn" id="recenterBtn" title="Recenter">🎯</button>
+    <div style="position:relative">
+      <button class="cbtn" id="layerBtn" title="Map style">🗺️</button>
+      <div class="layerpop" id="layerPop">
+        <button data-l="topo" class="sel">⛰️ Topographic</button>
+        <button data-l="street">🛣️ Streets</button>
+        <button data-l="sat">🛰️ Satellite</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- trail list panel -->
+  <div id="panel">
+    <button class="ptoggle" id="ptoggle"></button>
+    <div class="ptabs">
+      <button class="ptab sel" data-mode="atlas">🌍 World Atlas</button>
+      <button class="ptab" data-mode="local">📍 Near Me</button>
+    </div>
+    <div class="phead" id="pheadAtlas">
+      <h2>World Trail Atlas</h2>
+      <p id="panelSub">18 legendary routes · 6 continents</p>
+    </div>
+    <div class="filters" id="filters"></div>
+    <div id="localHead" style="display:none">
+      <div class="searchbar">
+        <input id="placeInput" placeholder="Search a town, city or area…" value="Birmingham" autocomplete="off">
+        <button id="searchBtn">Find</button>
+      </div>
+      <div class="searchrow">
+        <button id="useLoc" class="ghostmini">📍 Use my location</button>
+        <div class="radii" id="radii"></div>
+      </div>
+      <div class="lstatus" id="lstatus">Search an area to discover real trails nearby — powered by OpenStreetMap.</div>
+    </div>
+    <div class="plist" id="plist"></div>
+  </div>
+
+  <!-- detail drawer -->
+  <div id="detail">
+    <div class="dhead">
+      <button class="dclose" id="dclose">✕</button>
+      <div class="dflag" id="dFlag">🏔️</div>
+      <h2 id="dName">—</h2>
+      <div class="dloc" id="dLoc">—</div>
+    </div>
+    <div class="dblurb" id="dBlurb"></div>
+    <div class="dgrid">
+      <div class="c"><div class="v" id="dDist">—</div><div class="l">Distance</div></div>
+      <div class="c"><div class="v" id="dElev">—</div><div class="l">Peak Alt</div></div>
+      <div class="c"><div class="v" id="dDiff">—</div><div class="l">Grade</div></div>
+      <div class="c"><div class="v" id="dXp">—</div><div class="l">Reward</div></div>
+    </div>
+    <div class="dact" id="dAct"></div>
+  </div>
+
+  <div id="gps"></div>
+  <div id="toasts"></div>
+
+  <!-- badges modal -->
+  <div id="modal">
+    <div class="mcard">
+      <div class="mtop">
+        <div><h2>Trophy Cabinet</h2><p id="badgeProgress">0 / 0 unlocked</p></div>
+        <button class="dclose" id="mclose" style="position:static">✕</button>
+      </div>
+      <div class="bgrid" id="bgrid"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ============================================================
+   SUMMIT QUEST — data
+   ============================================================ */
+const DIFF = {Easy:'var(--easy)',Moderate:'var(--moderate)',Hard:'var(--hard)',Extreme:'var(--extreme)'};
+
+const TRAILS = [
+  {id:'snowdon',name:'Snowdon · Yr Wyddfa',country:'Wales, UK',cont:'Europe',flag:'🏴',
+   diff:'Moderate',dist:14,elev:1085,xp:280,
+   blurb:"The highest peak in Wales. The Llanberis Path climbs steadily beside the mountain railway to a summit cafe and views across Eryri (Snowdonia).",
+   coords:[[53.1196,-4.1278],[53.1003,-4.1188],[53.0865,-4.1185],[53.0792,-4.1166],[53.0685,-4.0764]]},
+  {id:'bennevis',name:'Ben Nevis',country:'Scotland, UK',cont:'Europe',flag:'🏴',
+   diff:'Hard',dist:17,elev:1345,xp:420,
+   blurb:"Britain's highest mountain. The Mountain Track (Pony Track) is relentless but non-technical, rising from Glen Nevis to a vast summit plateau.",
+   coords:[[56.7969,-5.0036],[56.7916,-5.0117],[56.7965,-5.0227],[56.8005,-5.0291],[56.8068,-5.0030]]},
+  {id:'whw',name:'West Highland Way',country:'Scotland, UK',cont:'Europe',flag:'🏴',
+   diff:'Hard',dist:154,elev:550,xp:560,
+   blurb:"Scotland's classic long-distance route: 96 miles from Milngavie to Fort William past Loch Lomond, Rannoch Moor and Glencoe.",
+   coords:[[55.9419,-4.3158],[56.0958,-4.6332],[56.2393,-4.6510],[56.4861,-4.7700],[56.6749,-4.9258],[56.8198,-5.1052]]},
+  {id:'hadrian',name:"Hadrian's Wall Path",country:'England, UK',cont:'Europe',flag:'🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+   diff:'Moderate',dist:135,elev:345,xp:380,
+   blurb:"Walk coast to coast along the Roman frontier, tracing 1,900-year-old wall, forts and turrets across northern England.",
+   coords:[[54.9907,-1.5326],[54.9881,-2.0944],[55.0245,-2.3592],[54.9938,-2.6080],[54.9558,-3.2105]]},
+  {id:'tmb',name:'Tour du Mont Blanc',country:'France · Italy · Switzerland',cont:'Europe',flag:'🇫🇷',
+   diff:'Hard',dist:170,elev:2665,xp:640,
+   blurb:"A 170km circuit around the Mont Blanc massif crossing three countries, with high cols, glaciers and alpine meadows.",
+   coords:[[45.9237,6.8694],[45.8326,6.7669],[45.7833,6.9667],[45.8000,7.1500],[45.9333,7.0167],[45.9237,6.8694]]},
+  {id:'camino',name:'Camino de Santiago',country:'Spain',cont:'Europe',flag:'🇪🇸',
+   diff:'Moderate',dist:780,elev:1450,xp:700,
+   blurb:"The Camino Francés: a pilgrimage of nearly 800km from the French Pyrenees across northern Spain to Santiago de Compostela.",
+   coords:[[43.1632,-1.2367],[42.8125,-1.6458],[42.4667,-2.4500],[42.3439,-3.6969],[42.5987,-5.5671],[42.8805,-8.5456]]},
+  {id:'laugavegur',name:'Laugavegur Trail',country:'Iceland',cont:'Europe',flag:'🇮🇸',
+   diff:'Hard',dist:55,elev:1100,xp:480,
+   blurb:"Iceland's most famous trek through rhyolite mountains, steaming geothermal fields, black deserts and glacial rivers.",
+   coords:[[63.9966,-19.0608],[63.9333,-19.1167],[63.8667,-19.2667],[63.7833,-19.4333],[63.6800,-19.5100]]},
+  {id:'gr20',name:'GR20',country:'Corsica, France',cont:'Europe',flag:'🇫🇷',
+   diff:'Extreme',dist:180,elev:2706,xp:880,
+   blurb:"Reputed as Europe's toughest long trail — a rugged 180km traverse of Corsica's mountainous spine with scrambling and exposure.",
+   coords:[[42.5083,8.8533],[42.4000,8.9167],[42.2167,9.0167],[42.0500,9.1333],[41.9000,9.2500],[41.7383,9.3400]]},
+  {id:'inca',name:'Inca Trail to Machu Picchu',country:'Peru',cont:'South America',flag:'🇵🇪',
+   diff:'Hard',dist:43,elev:4215,xp:620,
+   blurb:"Four days on original Inca paving over Dead Woman's Pass, through cloud forest and ruins, arriving at the Sun Gate above Machu Picchu.",
+   coords:[[13.2667,-72.4333],[13.2333,-72.4667],[13.2000,-72.5000],[13.1833,-72.5333],[13.1631,-72.5450]]},
+  {id:'paine',name:'Torres del Paine · W Trek',country:'Chile',cont:'South America',flag:'🇨🇱',
+   diff:'Hard',dist:80,elev:1180,xp:600,
+   blurb:"Patagonia's iconic 'W': granite towers, hanging glaciers and turquoise lakes battered by famously fierce winds.",
+   coords:[[-51.0000,-73.0000],[-50.9833,-73.0667],[-50.9500,-73.1333],[-50.9333,-73.2167],[-50.9833,-73.3833]]},
+  {id:'ebc',name:'Everest Base Camp Trek',country:'Nepal',cont:'Asia',flag:'🇳🇵',
+   diff:'Extreme',dist:130,elev:5644,xp:900,
+   blurb:"From Lukla through Namche Bazaar and Sherpa villages to the foot of the world's highest mountain at 5,364m, topping Kala Patthar.",
+   coords:[[27.6869,86.7314],[27.8050,86.7140],[27.8350,86.7140],[27.8970,86.7100],[27.9550,86.8200],[28.0021,86.8523]]},
+  {id:'fuji',name:'Mount Fuji · Yoshida Trail',country:'Japan',cont:'Asia',flag:'🇯🇵',
+   diff:'Hard',dist:14,elev:3776,xp:440,
+   blurb:"Japan's sacred 3,776m volcano. The Yoshida route climbs through mountain huts to a sunrise (goraikō) summit on the crater rim.",
+   coords:[[35.3917,138.7308],[35.3806,138.7300],[35.3700,138.7290],[35.3650,138.7280],[35.3606,138.7274]]},
+  {id:'annapurna',name:'Annapurna Circuit',country:'Nepal',cont:'Asia',flag:'🇳🇵',
+   diff:'Extreme',dist:160,elev:5416,xp:860,
+   blurb:"A grand Himalayan circuit crossing the Thorong La pass at 5,416m, spanning subtropical valleys to high desert plateau.",
+   coords:[[28.2667,84.1167],[28.5333,84.0833],[28.7167,83.9333],[28.7950,83.9400],[28.7000,83.7833],[28.5000,83.7000]]},
+  {id:'kili',name:'Kilimanjaro · Machame',country:'Tanzania',cont:'Africa',flag:'🇹🇿',
+   diff:'Extreme',dist:62,elev:5895,xp:920,
+   blurb:"The 'Whiskey Route' up Africa's highest peak — rainforest to arctic summit at Uhuru Peak, 5,895m, in six demanding days.",
+   coords:[[-3.0967,37.2933],[-3.1167,37.3167],[-3.1000,37.3500],[-3.0833,37.3833],[-3.0674,37.3556]]},
+  {id:'otter',name:'Otter Trail',country:'South Africa',cont:'Africa',flag:'🇿🇦',
+   diff:'Moderate',dist:45,elev:300,xp:360,
+   blurb:"South Africa's oldest hiking trail hugs the wild Garden Route coast — sea cliffs, fynbos, river crossings and forest.",
+   coords:[[-34.0167,23.8950],[-34.0100,23.9500],[-34.0050,24.0167],[-33.9933,24.0833],[-33.9750,24.1717]]},
+  {id:'overland',name:'Overland Track',country:'Tasmania, Australia',cont:'Oceania',flag:'🇦🇺',
+   diff:'Hard',dist:65,elev:1545,xp:520,
+   blurb:"Tasmania's alpine classic from Cradle Mountain to Lake St Clair through buttongrass moors, rainforest and dolerite peaks.",
+   coords:[[-41.6833,145.9500],[-41.7833,145.9667],[-41.8833,146.0333],[-42.0167,146.1167],[-42.1083,146.1783]]},
+  {id:'tongariro',name:'Tongariro Alpine Crossing',country:'New Zealand',cont:'Oceania',flag:'🇳🇿',
+   diff:'Moderate',dist:20,elev:1886,xp:340,
+   blurb:"A volcanic day-trek across emerald crater lakes and steaming vents beneath Mt Ngauruhoe — often called NZ's best one-day walk.",
+   coords:[[-39.1417,175.5817],[-39.1333,175.6333],[-39.1300,175.6517],[-39.1217,175.6650],[-39.1083,175.6917]]},
+  {id:'pct',name:'Pacific Crest Trail',country:'USA',cont:'North America',flag:'🇺🇸',
+   diff:'Extreme',dist:4265,elev:4009,xp:1000,
+   blurb:"4,265km from the Mexican border to Canada through the deserts, Sierra Nevada and Cascades — a thru-hiker's holy grail.",
+   coords:[[32.5897,-116.4669],[34.0000,-117.0000],[37.7300,-119.5700],[40.8000,-121.4200],[45.3300,-121.7000],[49.0000,-120.8000]]},
+];
+
+const LEVELS = [
+  {min:0,t:'Trailhead Rookie',s:'ROOKIE'},
+  {min:300,t:'Day Hiker',s:'HIKER'},
+  {min:800,t:'Pathfinder',s:'PATHFINDER'},
+  {min:1600,t:'Ridge Walker',s:'RIDGE'},
+  {min:2800,t:'Summit Seeker',s:'SEEKER'},
+  {min:4500,t:'Alpinist',s:'ALPINIST'},
+  {min:7000,t:'Expedition Leader',s:'EXPED'},
+  {min:10500,t:'High Mountaineer',s:'MOUNT'},
+  {min:15000,t:'Peak Master',s:'MASTER'},
+  {min:21000,t:'Legendary Explorer',s:'LEGEND'},
+];
+
+const CONTINENTS = ['Europe','Asia','Africa','North America','South America','Oceania'];
+
+const BADGES = [
+  {id:'first',e:'👣',n:'First Steps',d:'Summit your first trail',chk:s=>s.completed.length>=1},
+  {id:'five',e:'🥾',n:'Trail Veteran',d:'Summit 5 trails',chk:s=>s.completed.length>=5},
+  {id:'ten',e:'🏕️',n:'Seasoned Trekker',d:'Summit 10 trails',chk:s=>s.completed.length>=10},
+  {id:'all',e:'👑',n:'Atlas Complete',d:'Summit every trail',chk:s=>s.completed.length>=TRAILS.length},
+  {id:'eu',e:'🏰',n:'Europe Explored',d:'A summit in Europe',chk:s=>contDone(s,'Europe')},
+  {id:'as',e:'🏯',n:'Asia Explored',d:'A summit in Asia',chk:s=>contDone(s,'Asia')},
+  {id:'af',e:'🦁',n:'Africa Explored',d:'A summit in Africa',chk:s=>contDone(s,'Africa')},
+  {id:'na',e:'🦅',n:'N. America Explored',d:'A summit in N. America',chk:s=>contDone(s,'North America')},
+  {id:'sa',e:'🦙',n:'S. America Explored',d:'A summit in S. America',chk:s=>contDone(s,'South America')},
+  {id:'oc',e:'🦘',n:'Oceania Explored',d:'A summit in Oceania',chk:s=>contDone(s,'Oceania')},
+  {id:'globe',e:'🌍',n:'Globetrotter',d:'A summit on all 6 continents',chk:s=>CONTINENTS.every(c=>contDone(s,c))},
+  {id:'pace',e:'🚶',n:'Pacer',d:'Walk 1 km (live GPS)',chk:s=>s.km>=1},
+  {id:'blaze',e:'⚡',n:'Trailblazer',d:'Walk 5 km (live GPS)',chk:s=>s.km>=5},
+  {id:'mara',e:'🏃',n:'Marathoner',d:'Walk 42.2 km total',chk:s=>s.km>=42.2},
+  {id:'cent',e:'💯',n:'Centurion',d:'Walk 100 km total',chk:s=>s.km>=100},
+  {id:'fire',e:'🔥',n:'On Fire',d:'Hit a 3-day streak',chk:s=>s.streak>=3},
+  {id:'unstop',e:'🌟',n:'Unstoppable',d:'Hit a 7-day streak',chk:s=>s.streak>=7},
+  {id:'extreme',e:'💀',n:'Into the Death Zone',d:'Summit an Extreme trail',chk:s=>TRAILS.some(t=>t.diff==='Extreme'&&s.completed.includes(t.id))},
+];
+function contDone(s,c){return TRAILS.some(t=>t.cont===c&&s.completed.includes(t.id));}
+
+/* ============================================================
+   STATE + persistence (Claude artifact storage, in-mem fallback)
+   ============================================================ */
+const KEY='summitquest:v1';
+let state={xp:0,completed:[],embarked:null,km:0,streak:0,lastDay:null,badges:[]};
+const mem={};
+const store={
+  async get(k){try{if(window.storage){const r=await window.storage.get(k,false);return r?r.value:null;}}catch(e){} return mem[k]??null;},
+  async set(k,v){try{if(window.storage){await window.storage.set(k,v,false);return;}}catch(e){} mem[k]=v;}
+};
+async function load(){const raw=await store.get(KEY);if(raw){try{Object.assign(state,JSON.parse(raw));}catch(e){}}}
+let saveT;function save(){clearTimeout(saveT);saveT=setTimeout(()=>store.set(KEY,JSON.stringify(state)),250);}
+
+/* ============================================================
+   MAP
+   ============================================================ */
+let map,meMarker,meCircle,selId=null;
+let localTrails=[],panelMode='atlas',curRadius=15000,searchCenter=null;
+const trailLayers={};
+const tileDefs={
+  topo:{u:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',o:{maxZoom:17,attribution:'© OpenTopoMap (CC-BY-SA) · © OpenStreetMap contributors'}},
+  street:{u:'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',o:{maxZoom:20,subdomains:'abcd',attribution:'© CARTO · © OpenStreetMap contributors'}},
+  sat:{u:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',o:{maxZoom:19,attribution:'Imagery © Esri'}}
+};
+let curTile;
+
+function initMap(){
+  map=L.map('map',{zoomControl:false,attributionControl:true,worldCopyJump:true})
+        .setView([30,5],2.4);
+  L.control.zoom({position:'bottomright'}).addTo(map);
+  setTile('topo');
+  TRAILS.forEach(addTrail);
+  map.on('click',e=>{if(tapMode)placeMe(e.latlng.lat,e.latlng.lng,'tap');});
+}
+function setTile(name){
+  if(curTile)map.removeLayer(curTile);
+  const d=tileDefs[name];curTile=L.tileLayer(d.u,d.o).addTo(map);
+  document.querySelectorAll('#layerPop button').forEach(b=>b.classList.toggle('sel',b.dataset.l===name));
+}
+
+function addTrail(t){
+  const done=state.completed.includes(t.id);
+  const col=getComputedStyle(document.documentElement).getPropertyValue(diffVar(t.diff)).trim();
+  const segs=(t.segments&&t.segments.length)?t.segments:[t.coords];
+  const glowParts=[],lineParts=[];
+  segs.forEach(seg=>{
+    if(!seg||seg.length<2)return;
+    glowParts.push(L.polyline(seg,{color:col,weight:9,opacity:.18,lineCap:'round'}));
+    lineParts.push(L.polyline(seg,{color:done?'#3f7553':col,weight:4,opacity:.95,lineCap:'round',
+       dashArray:t.diff==='Extreme'?'1 9':null}));
+  });
+  const glow=L.featureGroup(glowParts), line=L.featureGroup(lineParts);
+  const headPt=(segs[0]&&segs[0][0])||t.coords[0];
+  const head=L.marker(headPt,{icon:L.divIcon({className:'',html:trailIcon(t,done,col),iconSize:[30,34],iconAnchor:[15,30]})});
+  const group=L.layerGroup([glow,line,head]).addTo(map);
+  [line,head,glow].forEach(l=>l.on('click',(e)=>{L.DomEvent.stop(e);selectTrail(t.id);}));
+  trailLayers[t.id]={group,line,glow,head,col};
+}
+function trailIcon(t,done,col){
+  return `<div class="th ${done?'done':''}"><div class="pin" style="background:${col}"><span>${done?'✓':'⛰'}</span></div></div>`;
+}
+function diffVar(d){return d==='Easy'?'--easy':d==='Moderate'?'--moderate':d==='Hard'?'--hard':'--extreme';}
+function refreshTrailStyle(t){
+  const L0=trailLayers[t.id];if(!L0)return;const done=state.completed.includes(t.id);
+  L0.line.setStyle({color:done?'#3f7553':L0.col});
+  L0.head.setIcon(L.divIcon({className:'',html:trailIcon(t,done,L0.col),iconSize:[30,34],iconAnchor:[15,30]}));
+}
+
+/* ============================================================
+   GEOLOCATION
+   ============================================================ */
+let watchId=null,lastFix=null,tapMode=false,haveFix=false;
+function gpsMsg(html,keep){const el=document.getElementById('gps');el.innerHTML=html;el.classList.add('show');
+  if(!keep){clearTimeout(gpsMsg._t);gpsMsg._t=setTimeout(()=>el.classList.remove('show'),5000);}}
+
+function startGPS(){
+  if(!('geolocation'in navigator)){enableTap('Geolocation unavailable on this device.');return;}
+  gpsMsg('📡 Acquiring GPS signal…',true);
+  navigator.geolocation.getCurrentPosition(onFix,onGeoErr,{enableHighAccuracy:true,timeout:12000,maximumAge:0});
+  watchId=navigator.geolocation.watchPosition(onFix,()=>{},{enableHighAccuracy:true,maximumAge:4000,timeout:20000});
+}
+function onFix(pos){
+  haveFix=true;tapMode=false;
+  const {latitude:la,longitude:lo,accuracy:acc}=pos.coords;
+  // distance accumulation with noise filtering
+  if(lastFix&&acc<60){
+    const d=haversine(lastFix.la,lastFix.lo,la,lo);
+    if(d>0.003&&d<0.12){state.km=+(state.km+d).toFixed(3);renderStats();save();checkBadges();}
+  }
+  lastFix={la,lo};
+  placeMe(la,lo,'gps',acc);
+  gpsMsg(`📍 Located · accuracy <b>±${Math.round(acc)}m</b>`);
+}
+function onGeoErr(err){
+  let m='Location blocked.';
+  if(err&&err.code===1)m='Location permission denied.';
+  else if(err&&err.code===3)m='GPS timed out.';
+  enableTap(m);
+}
+function enableTap(reason){
+  tapMode=true;
+  gpsMsg(`🗺️ ${reason} <b>Tap the map</b> to drop your explorer.`,true);
+}
+let firstCenter=true;
+function placeMe(la,lo,src,acc){
+  if(!meMarker){
+    meMarker=L.marker([la,lo],{icon:L.divIcon({className:'',html:'<div class="me-dot"></div>',iconSize:[18,18],iconAnchor:[9,9]}),zIndexOffset:1000}).addTo(map);
+  }else meMarker.setLatLng([la,lo]);
+  if(acc){
+    if(!meCircle)meCircle=L.circle([la,lo],{radius:acc,color:'#5ec7d6',weight:1,fillColor:'#5ec7d6',fillOpacity:.08}).addTo(map);
+    else{meCircle.setLatLng([la,lo]);meCircle.setRadius(acc);}
+  }
+  lastFix={la,lo};
+  if(firstCenter){map.flyTo([la,lo],src==='gps'?13:6,{duration:1.4});firstCenter=false;}
+  if(src==='tap'){gpsMsg('🚩 Explorer placed. Drag elsewhere by tapping again.');}
+}
+function recenter(){if(meMarker)map.flyTo(meMarker.getLatLng(),Math.max(map.getZoom(),13),{duration:1});else gpsMsg('No position yet — tap 📍 to locate.');}
+function haversine(la1,lo1,la2,lo2){const R=6371,r=Math.PI/180;
+  const dla=(la2-la1)*r,dlo=(lo2-lo1)*r;
+  const a=Math.sin(dla/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dlo/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
+
+/* ============================================================
+   GAMIFICATION
+   ============================================================ */
+function levelFor(xp){let i=0;for(let k=0;k<LEVELS.length;k++)if(xp>=LEVELS[k].min)i=k;return i;}
+function addXP(amt){
+  const before=levelFor(state.xp);
+  state.xp+=amt;
+  const after=levelFor(state.xp);
+  renderXP();
+  if(after>before){
+    const lv=LEVELS[after];
+    setTimeout(()=>toast('lvl','⭐',`Level ${after+1} Reached!`,`You are now a ${lv.t}`),500);
+  }
+  save();
+}
+function renderXP(){
+  const lv=levelFor(state.xp),cur=LEVELS[lv];
+  const next=LEVELS[lv+1];
+  const base=cur.min, ceil=next?next.min:cur.min;
+  const pct=next?Math.min(100,((state.xp-base)/(ceil-base))*100):100;
+  document.getElementById('lvlNum').textContent=lv+1;
+  document.getElementById('lvlTitle').textContent=cur.t;
+  document.getElementById('lvlTitleSm').textContent=cur.s;
+  document.getElementById('xpTxt').textContent=next?`${state.xp-base} / ${ceil-base} XP`:`${state.xp} XP · MAX`;
+  document.getElementById('xpFill').style.width=pct+'%';
+}
+function renderStats(){
+  document.getElementById('streak').textContent=state.streak;
+  document.getElementById('km').textContent=state.km.toFixed(1);
+  const unlocked=BADGES.filter(b=>state.badges.includes(b.id)).length;
+  document.getElementById('badgeCount').textContent=unlocked;
+}
+function checkBadges(){
+  let newOnes=[];
+  BADGES.forEach(b=>{if(!state.badges.includes(b.id)&&b.chk(state)){state.badges.push(b.id);newOnes.push(b);}});
+  if(newOnes.length){renderStats();save();
+    newOnes.forEach((b,i)=>setTimeout(()=>toast('badge',b.e,'Badge Unlocked',b.n),i*650+800));}
+}
+function touchStreak(){
+  const today=new Date().toISOString().slice(0,10);
+  if(state.lastDay===today)return;
+  const yest=new Date(Date.now()-864e5).toISOString().slice(0,10);
+  state.streak=(state.lastDay===yest)?state.streak+1:1;
+  state.lastDay=today;renderStats();save();checkBadges();
+}
+
+/* ---- trail actions ---- */
+function getTrail(id){return TRAILS.find(x=>x.id===id)||localTrails.find(x=>x.id===id);}
+function embark(id){
+  state.embarked=id;
+  const t=getTrail(id);
+  touchStreak();
+  toast('','🚩','Quest Accepted',`Tracking: ${t.name}`);
+  trailLayers[id].line.setStyle({weight:6});
+  renderDetail(id);save();
+}
+function complete(id){
+  if(state.completed.includes(id))return;
+  const t=getTrail(id);
+  state.completed.push(id);
+  if(state.embarked===id)state.embarked=null;
+  touchStreak();
+  refreshTrailStyle(t);
+  toast('','🏔️',`${t.name} Summited!`,`+${t.xp} XP earned`);
+  addXP(t.xp);
+  checkBadges();
+  renderDetail(id);refreshActiveList();save();
+}
+
+/* ============================================================
+   UI RENDER
+   ============================================================ */
+let filterCont='All',filterDiff='All';
+function renderFilters(){
+  const f=document.getElementById('filters');f.innerHTML='';
+  const mk=(label,val,kind,sel)=>{const b=document.createElement('button');b.className='chip'+(sel?' sel':'');
+    b.textContent=label;b.onclick=()=>{if(kind==='c')filterCont=val;else filterDiff=val;renderFilters();renderList();};return b;};
+  f.appendChild(mk('All','All','c',filterCont==='All'));
+  CONTINENTS.forEach(c=>f.appendChild(mk(c.replace('America','Am.'),c,'c',filterCont===c)));
+  ['Moderate','Hard','Extreme'].forEach(d=>f.appendChild(mk(d,d,'d',filterDiff===d)));
+  if(filterDiff!=='All')f.appendChild(mk('✕ grade','All','d',false));
+}
+function renderList(){
+  const list=document.getElementById('plist');list.innerHTML='';
+  const items=TRAILS.filter(t=>(filterCont==='All'||t.cont===filterCont)&&(filterDiff==='All'||t.diff===filterDiff));
+  document.getElementById('panelSub').textContent=`${items.length} route${items.length!==1?'s':''} shown · ${state.completed.length}/${TRAILS.length} summited`;
+  items.forEach(t=>{
+    const done=state.completed.includes(t.id);
+    const c=document.createElement('div');c.className='tcard'+(done?' done':'')+(selId===t.id?' active':'');
+    c.innerHTML=`<span class="flag">${t.flag}</span>
+      <h3>${t.name}</h3><div class="loc">${t.country}</div>
+      <div class="tmeta">
+        <span class="diff" style="background:${getComputedStyle(document.documentElement).getPropertyValue(diffVar(t.diff))};color:#0c130e">${t.diff}</span>
+        <span class="m">📏 ${t.dist}km</span>
+        <span class="m">⛰ ${t.elev}m</span>
+        <span class="xptag">+${t.xp} XP</span>
+      </div>`;
+    c.onclick=()=>selectTrail(t.id);
+    list.appendChild(c);
+  });
+}
+function refreshActiveList(){panelMode==='atlas'?renderList():renderLocal();}
+
+function renderLocal(){
+  const list=document.getElementById('plist');list.innerHTML='';
+  if(!localTrails.length){
+    list.innerHTML=`<div class="emptylocal"><span class="big">🧭</span>
+      Search a place above — or tap <b>“Use my location”</b> — to pull real trails mapped nearby.<br><br>
+      Try “Birmingham”, “Lake District”, “Peak District”, or your own town.</div>`;
+    return;
+  }
+  localTrails.forEach(t=>{
+    const done=state.completed.includes(t.id);
+    const c=document.createElement('div');c.className='tcard local'+(done?' done':'')+(selId===t.id?' active':'');
+    c.innerHTML=`<span class="flag">${t.flag}</span>
+      <h3>${t.name}</h3><div class="loc">${t.region||'Nearby'} <span class="osmtag">OSM</span></div>
+      <div class="tmeta">
+        <span class="diff" style="background:${getComputedStyle(document.documentElement).getPropertyValue(diffVar(t.diff))};color:#0c130e">${t.diff}</span>
+        <span class="m">📏 ${t.dist}km</span>
+        <span class="xptag">+${t.xp} XP</span>
+      </div>`;
+    c.onclick=()=>selectTrail(t.id);
+    list.appendChild(c);
+  });
+}
+
+/* ---- panel mode + radius controls ---- */
+function setMode(m){
+  panelMode=m;
+  document.querySelectorAll('.ptab').forEach(b=>b.classList.toggle('sel',b.dataset.mode===m));
+  document.getElementById('pheadAtlas').style.display=m==='atlas'?'':'none';
+  document.getElementById('filters').style.display=m==='atlas'?'':'none';
+  document.getElementById('localHead').style.display=m==='local'?'':'none';
+  refreshActiveList();
+}
+function renderRadii(){
+  const r=document.getElementById('radii');r.innerHTML='';
+  [[8000,'8km'],[15000,'15km'],[30000,'30km']].forEach(([v,lab])=>{
+    const b=document.createElement('button');b.className='rchip'+(curRadius===v?' sel':'');
+    b.textContent=lab;b.onclick=()=>{curRadius=v;renderRadii();if(searchCenter)discoverLocal(searchCenter.lat,searchCenter.lon,curRadius,searchCenter.label);};
+    r.appendChild(b);
+  });
+}
+function setStatus(html,loading){
+  const el=document.getElementById('lstatus');
+  el.innerHTML=(loading?'<span class="spin"></span>':'')+`<span>${html}</span>`;
+}
+
+/* ---- geocoding + OpenStreetMap Overpass ---- */
+async function geocode(q){
+  const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=0&q='+encodeURIComponent(q);
+  const r=await fetch(url,{headers:{'Accept':'application/json'}});
+  const j=await r.json();
+  if(!j||!j.length)return null;
+  const short=j[0].display_name.split(',').slice(0,2).join(', ');
+  return {lat:+j[0].lat,lon:+j[0].lon,label:short};
+}
+const OVP=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
+async function overpass(query){
+  for(const ep of OVP){
+    try{
+      const r=await fetch(ep,{method:'POST',body:'data='+encodeURIComponent(query)});
+      if(r.ok)return await r.json();
+    }catch(e){}
+  }
+  throw new Error('overpass unreachable');
+}
+function segLen(segs){let d=0;segs.forEach(s=>{for(let i=1;i<s.length;i++)d+=haversine(s[i-1][0],s[i-1][1],s[i][0],s[i][1]);});return d;}
+function buildLocalTrail(id,name,tags,segs,dist,region){
+  const diff=dist<8?'Easy':dist<16?'Moderate':dist<30?'Hard':'Extreme';
+  const xp={Easy:120,Moderate:240,Hard:420,Extreme:700}[diff];
+  const blurb=tags.description||tags.note||(tags.network?`Part of a recognised walking network. `:'')
+    +'A real walking route mapped in OpenStreetMap. Use “Directions to trailhead” to navigate to the start, then log your summit to earn XP.';
+  return {id,name,flag:'🥾',cont:'Local',region,diff,dist:Math.max(1,Math.round(dist)),elev:null,xp,
+    segments:segs,coords:segs[0],start:segs[0][0],blurb};
+}
+function parseOSM(data,region){
+  const els=(data&&data.elements)||[];const out=[];const seen=new Set();
+  els.forEach(el=>{
+    const tags=el.tags||{};
+    const name=tags.name||tags.ref;
+    if(!name||seen.has(name))return;
+    let segs=[];
+    if(el.type==='way'&&el.geometry)segs=[el.geometry.map(g=>[g.lat,g.lon])];
+    else if(el.type==='relation'&&el.members)
+      el.members.forEach(m=>{if(m.type==='way'&&m.geometry&&m.geometry.length>1)segs.push(m.geometry.map(g=>[g.lat,g.lon]));});
+    segs=segs.filter(s=>s&&s.length>1);
+    if(!segs.length)return;
+    const dist=segLen(segs);
+    if(dist<0.6)return;                 // skip trivial fragments
+    seen.add(name);
+    out.push(buildLocalTrail(el.type+'/'+el.id,name,tags,segs,dist,region));
+  });
+  out.sort((a,b)=>b.dist-a.dist);
+  return out.slice(0,28);
+}
+function clearLocal(){
+  localTrails.forEach(t=>{const L0=trailLayers[t.id];if(L0){map.removeLayer(L0.group);delete trailLayers[t.id];}});
+  localTrails=[];
+}
+async function discoverLocal(lat,lon,radius,label){
+  searchCenter={lat,lon,label};
+  setStatus(`Scanning <b>${label||'this area'}</b> for trails…`,true);
+  map.flyTo([lat,lon],radius>=30000?10:radius>=15000?11:12,{duration:1.1});
+  const q=`[out:json][timeout:30];
+(
+  relation["route"~"^(hiking|foot|walking)$"](around:${radius},${lat},${lon});
+  way["highway"="path"]["name"](around:${radius},${lat},${lon});
+  way["highway"="footway"]["name"]["foot"!="no"](around:${radius},${lat},${lon});
+);
+out tags geom 120;`;
+  let data;
+  try{data=await overpass(q);}
+  catch(e){setStatus('⚠️ Couldn’t reach the trail database right now — please try again in a moment.');return;}
+  const trails=parseOSM(data,label);
+  clearLocal();localTrails=trails;
+  trails.forEach(addTrail);
+  selId=null;document.getElementById('detail').classList.remove('open');
+  renderLocal();
+  if(trails.length){
+    setStatus(`Found <b>${trails.length}</b> trail${trails.length!==1?'s':''} near ${label||'you'} · longest first.`);
+    if(trailLayers[trails[0].id])map.flyToBounds(trailLayers[trails[0].id].line.getBounds(),{padding:[80,80],maxZoom:12,duration:1});
+  }else{
+    setStatus('No named trails mapped here yet — try a bigger radius or a nearby town.');
+  }
+}
+async function runSearch(){
+  const q=document.getElementById('placeInput').value.trim();
+  if(!q)return;
+  setStatus(`Looking up <b>${q}</b>…`,true);
+  let loc;
+  try{loc=await geocode(q);}catch(e){loc=null;}
+  if(!loc){setStatus(`Couldn’t find “${q}”. Try a different spelling or a larger place.`);return;}
+  discoverLocal(loc.lat,loc.lon,curRadius,loc.label);
+}
+function searchHere(){
+  if(meMarker){const p=meMarker.getLatLng();discoverLocal(p.lat,p.lng,curRadius,'your location');}
+  else{setStatus('Finding your location…',true);firstCenter=false;
+    navigator.geolocation?navigator.geolocation.getCurrentPosition(
+      p=>discoverLocal(p.coords.latitude,p.coords.longitude,curRadius,'your location'),
+      ()=>setStatus('Location unavailable — type a place name instead.'),
+      {enableHighAccuracy:true,timeout:12000}):setStatus('Location unavailable — type a place name instead.');}
+}
+function selectTrail(id){
+  selId=id;refreshActiveList();renderDetail(id);
+  document.getElementById('detail').classList.add('open');
+  const L0=trailLayers[id];if(!L0)return;
+  map.flyToBounds(L0.line.getBounds(),{padding:[90,90],maxZoom:13,duration:1.1});
+  Object.values(trailLayers).forEach(l=>l.line.setStyle({weight:4}));
+  L0.line.setStyle({weight:6});
+}
+function renderDetail(id){
+  const t=getTrail(id);if(!t)return;
+  const done=state.completed.includes(t.id),emb=state.embarked===id;
+  document.getElementById('dFlag').textContent=t.flag;
+  document.getElementById('dName').textContent=t.name;
+  const locLabel=t.cont==='Local'?`${(t.region||'NEARBY').toUpperCase()} · OPENSTREETMAP`:`${t.country.toUpperCase()} · ${t.cont.toUpperCase()}`;
+  document.getElementById('dLoc').textContent=locLabel;
+  document.getElementById('dBlurb').textContent=t.blurb;
+  document.getElementById('dDist').textContent=t.dist+'km';
+  document.getElementById('dElev').textContent=t.elev?t.elev+'m':'—';
+  document.getElementById('dDiff').textContent=t.diff;
+  document.getElementById('dDiff').style.color=getComputedStyle(document.documentElement).getPropertyValue(diffVar(t.diff));
+  document.getElementById('dXp').textContent='+'+t.xp;
+  const act=document.getElementById('dAct');act.innerHTML='';
+  if(done){act.innerHTML=`<button class="pbtn done" style="flex:1 1 100%">✓ Summited</button>`;}
+  else{
+    const eb=document.createElement('button');eb.className='pbtn ghost';
+    eb.innerHTML=emb?'🎯 Tracking…':'🚩 Embark';eb.onclick=()=>embark(id);
+    const cb=document.createElement('button');cb.className='pbtn primary';
+    cb.innerHTML='🏔️ Log Summit';cb.onclick=()=>complete(id);
+    act.append(eb,cb);
+  }
+  const sc=t.start||(t.coords&&t.coords[0]);
+  if(sc){
+    const db=document.createElement('button');db.className='pbtn wide ghost';
+    db.innerHTML='🧭 Directions to trailhead';
+    db.onclick=()=>window.open(`https://www.google.com/maps/dir/?api=1&destination=${sc[0]},${sc[1]}&travelmode=driving`,'_blank');
+    act.appendChild(db);
+  }
+}
+
+/* ---- toast ---- */
+function toast(cls,ico,tt,ts){
+  const el=document.createElement('div');el.className='toast '+cls;
+  el.innerHTML=`<div class="ico">${ico}</div><div><div class="tt">${tt}</div><div class="ts">${ts}</div></div>`;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(()=>{el.style.transition='all .4s';el.style.opacity='0';el.style.transform='translateY(-12px)';
+    setTimeout(()=>el.remove(),420);},3600);
+}
+
+/* ---- badges modal ---- */
+function renderBadges(){
+  const g=document.getElementById('bgrid');g.innerHTML='';
+  const unlocked=state.badges.length;
+  document.getElementById('badgeProgress').textContent=`${unlocked} / ${BADGES.length} unlocked`;
+  BADGES.forEach(b=>{
+    const on=state.badges.includes(b.id);
+    const d=document.createElement('div');d.className='bcard '+(on?'unlocked':'locked');
+    d.innerHTML=`<div class="be">${on?b.e:'🔒'}</div><div class="bn">${b.n}</div><div class="bd">${b.d}</div>`;
+    g.appendChild(d);
+  });
+}
+
+/* ============================================================
+   WIRING
+   ============================================================ */
+function wire(){
+  document.getElementById('locateBtn').onclick=()=>{firstCenter=true;startGPS();};
+  document.getElementById('recenterBtn').onclick=recenter;
+  document.getElementById('layerBtn').onclick=e=>{e.stopPropagation();document.getElementById('layerPop').classList.toggle('open');};
+  document.addEventListener('click',()=>document.getElementById('layerPop').classList.remove('open'));
+  document.querySelectorAll('#layerPop button').forEach(b=>b.onclick=e=>{e.stopPropagation();setTile(b.dataset.l);});
+  document.getElementById('dclose').onclick=()=>{document.getElementById('detail').classList.remove('open');selId=null;refreshActiveList();
+    Object.values(trailLayers).forEach(l=>l.line.setStyle({weight:4}));};
+  document.getElementById('openBadges').onclick=()=>{renderBadges();document.getElementById('modal').classList.add('open');};
+  document.getElementById('mclose').onclick=()=>document.getElementById('modal').classList.remove('open');
+  document.getElementById('modal').onclick=e=>{if(e.target.id==='modal')document.getElementById('modal').classList.remove('open');};
+  document.getElementById('ptoggle').onclick=()=>document.getElementById('app').classList.toggle('panel-collapsed');
+  // local discovery wiring
+  document.querySelectorAll('.ptab').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+  document.getElementById('searchBtn').onclick=runSearch;
+  document.getElementById('placeInput').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch();});
+  document.getElementById('useLoc').onclick=searchHere;
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+(async function(){
+  await load();
+  initMap();
+  wire();
+  renderFilters();renderRadii();renderList();renderXP();renderStats();
+  startGPS();
+  setTimeout(()=>{if(!haveFix&&!tapMode&&!meMarker)gpsMsg('🗺️ Tip: tap 📍 to find yourself, or tap the map to drop in.',true);},6000);
+})();
+</script>
